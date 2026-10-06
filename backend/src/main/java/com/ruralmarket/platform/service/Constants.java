@@ -26,6 +26,15 @@ public class Constants {
     public static final int VETERAN_MIN_HISTORY = 3;
     public static final int VETERAN_MIN_CREDIT = 60;
 
+    /** 摊位图风险点：同一区域边界争议累计达到该起数即标记为风险点，下次集市前需重新测量发布更新图 */
+    public static final int BOUNDARY_RISK_THRESHOLD = 2;
+
+    /** 认定超出抽签面积时默认扣减信用分 */
+    public static final int BOUNDARY_DEFAULT_PENALTY = 5;
+
+    /** 整改通知默认期限（小时） */
+    public static final int RECTIFY_DEFAULT_DEADLINE_HOURS = 24;
+
     public static boolean isVeteran(int historyCount, int creditScore) {
         return historyCount >= VETERAN_MIN_HISTORY && creditScore >= VETERAN_MIN_CREDIT;
     }

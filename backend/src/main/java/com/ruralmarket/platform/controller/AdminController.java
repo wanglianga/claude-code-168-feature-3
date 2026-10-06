@@ -34,10 +34,14 @@ public class AdminController {
     private final CreditLogRepository creditLogRepository;
     private final AuditLogRepository auditLogRepository;
     private final UserRepository userRepository;
+    private final BoundaryDisputeRepository boundaryDisputeRepository;
+    private final RectificationRepository rectificationRepository;
+    private final StallMapVersionRepository stallMapVersionRepository;
     private final LotteryService lotteryService;
     private final AdjustmentService adjustmentService;
     private final CreditService creditService;
     private final AuditService auditService;
+    private final BoundaryService boundaryService;
 
     public AdminController(MarketEventRepository eventRepository, ApplicationRepository applicationRepository,
                            LotteryRunRepository runRepository, LotteryResultRepository resultRepository,
@@ -46,9 +50,13 @@ public class AdminController {
                            PaymentRepository paymentRepository, PatrolRecordRepository patrolRepository,
                            FoodSampleRepository sampleRepository, EntryCheckRepository entryCheckRepository,
                            CreditLogRepository creditLogRepository, AuditLogRepository auditLogRepository,
-                           UserRepository userRepository, LotteryService lotteryService,
+                           UserRepository userRepository,
+                           BoundaryDisputeRepository boundaryDisputeRepository,
+                           RectificationRepository rectificationRepository,
+                           StallMapVersionRepository stallMapVersionRepository,
+                           LotteryService lotteryService,
                            AdjustmentService adjustmentService, CreditService creditService,
-                           AuditService auditService) {
+                           AuditService auditService, BoundaryService boundaryService) {
         this.eventRepository = eventRepository;
         this.applicationRepository = applicationRepository;
         this.runRepository = runRepository;
@@ -64,10 +72,14 @@ public class AdminController {
         this.creditLogRepository = creditLogRepository;
         this.auditLogRepository = auditLogRepository;
         this.userRepository = userRepository;
+        this.boundaryDisputeRepository = boundaryDisputeRepository;
+        this.rectificationRepository = rectificationRepository;
+        this.stallMapVersionRepository = stallMapVersionRepository;
         this.lotteryService = lotteryService;
         this.adjustmentService = adjustmentService;
         this.creditService = creditService;
         this.auditService = auditService;
+        this.boundaryService = boundaryService;
     }
 
     private User me() {
@@ -397,6 +409,61 @@ public class AdminController {
         }
         out.put("complaintByType", complaintByType);
         return out;
+    }
+
+    // ================= 摊位边界争议调解 =================
+    @GetMapping("/boundary-disputes")
+    public List<BoundaryDispute> boundaryDisputes(@RequestParam(required = false) Long eventId) {
+        if (eventId != null) return boundaryDisputeRepository.findByEventIdOrderByCreatedAtDesc(eventId);
+        return boundaryDisputeRepository.findAllByOrderByCreatedAtDesc();
+    }
+
+    public record BoundaryHandleReq(@NotBlank String conclusion, Long violatorResultId,
+                                    String resolution, Integer penaltyPoints) {}
+
+    /** 认定：OVER_AREA 超面积(整改+扣分) / MAP_UNCLEAR 图不清晰(免除扣罚+重新测量) / NO_VIOLATION 无违规 */
+    @PostMapping("/boundary-disputes/{id}/handle")
+    @Transactional
+    public BoundaryService.HandleResult handleBoundary(@PathVariable Long id, @RequestBody BoundaryHandleReq req) {
+        return boundaryService.handle(id, req.conclusion(), req.violatorResultId(),
+                req.resolution(), req.penaltyPoints(), me());
+    }
+
+    @GetMapping("/rectifications")
+    public List<Rectification> rectifications(@RequestParam(required = false) Long eventId) {
+        if (eventId != null) return rectificationRepository.findByEventIdOrderByCreatedAtDesc(eventId);
+        return rectificationRepository.findAll();
+    }
+
+    public record RectifyVerifyReq(@NotNull Boolean done, String note) {}
+
+    @PostMapping("/rectifications/{id}/verify")
+    @Transactional
+    public Rectification verifyRectification(@PathVariable Long id, @RequestBody RectifyVerifyReq req) {
+        return boundaryService.verifyRectification(id, req.done(), req.note(), me());
+    }
+
+    /** 摊位图风险点（争议频发区域） */
+    @GetMapping("/boundary-risk-points")
+    public List<Map<String, Object>> boundaryRiskPoints() {
+        return boundaryService.riskPoints();
+    }
+
+    // ================= 摊位图版本（重新测量后发布，新老摊主可见） =================
+    @GetMapping("/stall-map-versions")
+    public List<StallMapVersion> stallMapVersions() {
+        return stallMapVersionRepository.findAllByOrderByCreatedAtDesc();
+    }
+
+    public record MapPublishReq(@NotBlank String scopeType, Long zoneId, String scopeLabel,
+                                @NotBlank String imageUrl, @NotBlank String reason,
+                                String changeSummary, String basisDisputeIds) {}
+
+    @PostMapping("/stall-map-versions/publish")
+    @Transactional
+    public StallMapVersion publishMap(@RequestBody MapPublishReq req) {
+        return boundaryService.publishMap(req.scopeType(), req.zoneId(), req.scopeLabel(),
+                req.imageUrl(), req.reason(), req.changeSummary(), req.basisDisputeIds(), me());
     }
 
     // ================= 审计日志 =================

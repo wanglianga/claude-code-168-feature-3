@@ -58,6 +58,40 @@ export const RESULT_STATUS = {
   CANCELLED: { text: '已取消', type: 'info' }
 }
 
+// ===== 摊位边界争议调解 =====
+export const DISPUTE_STATUS = {
+  SUBMITTED: { text: '待认定', type: 'warning' },
+  RESOLVED: { text: '已认定', type: 'success' }
+}
+
+export const DISPUTE_CONCLUSION = {
+  OVER_AREA: { text: '一方超抽签面积', type: 'danger' },
+  MAP_UNCLEAR: { text: '抽签图不清晰', type: 'warning' },
+  NO_VIOLATION: { text: '双方均未违规', type: 'info' }
+}
+
+export const RECTIFY_STATUS = {
+  ISSUED: { text: '已下发·待整改', type: 'danger' },
+  DONE: { text: '已整改', type: 'success' },
+  OVERDUE: { text: '逾期未改', type: 'warning' }
+}
+
+export const MAP_VERSION_STATUS = {
+  MEASURING: { text: '待重新测量', type: 'warning' },
+  PUBLISHED: { text: '已发布', type: 'success' }
+}
+
+export const RISK_STATUS = {
+  PENDING: { text: '待重新测量', type: 'danger' },
+  MEASURING: { text: '测量中', type: 'warning' },
+  RESOLVED: { text: '已发布更新图', type: 'success' }
+}
+
+export const MAP_SCOPE = {
+  ZONE: '区域图',
+  GLOBAL: '全场图'
+}
+
 export function catName(code) { return CATEGORIES[code] || code || '-' }
 
 export function fmtTime(t) { return t ? String(t).replace('T', ' ').slice(0, 16) : '-' }

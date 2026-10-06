@@ -5,6 +5,7 @@ import com.ruralmarket.platform.config.BizException;
 import com.ruralmarket.platform.entity.*;
 import com.ruralmarket.platform.repository.*;
 import com.ruralmarket.platform.service.AuditService;
+import com.ruralmarket.platform.service.BoundaryService;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import org.springframework.transaction.annotation.Transactional;
@@ -14,7 +15,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** 市场工作人员端：扫码入场核验、巡查记录、留样查看 */
+/** 市场工作人员端：扫码入场核验、巡查记录、留样查看、边界争议现场登记 */
 @RestController
 @RequestMapping("/api/staff")
 public class StaffController {
@@ -25,12 +26,16 @@ public class StaffController {
     private final MarketEventRepository eventRepository;
     private final UserRepository userRepository;
     private final PaymentRepository paymentRepository;
+    private final BoundaryDisputeRepository boundaryDisputeRepository;
+    private final BoundaryService boundaryService;
     private final AuditService audit;
 
     public StaffController(LotteryResultRepository resultRepository, EntryCheckRepository entryCheckRepository,
                            PatrolRecordRepository patrolRepository, FoodSampleRepository sampleRepository,
                            MarketEventRepository eventRepository, UserRepository userRepository,
-                           PaymentRepository paymentRepository, AuditService audit) {
+                           PaymentRepository paymentRepository,
+                           BoundaryDisputeRepository boundaryDisputeRepository,
+                           BoundaryService boundaryService, AuditService audit) {
         this.resultRepository = resultRepository;
         this.entryCheckRepository = entryCheckRepository;
         this.patrolRepository = patrolRepository;
@@ -38,6 +43,8 @@ public class StaffController {
         this.eventRepository = eventRepository;
         this.userRepository = userRepository;
         this.paymentRepository = paymentRepository;
+        this.boundaryDisputeRepository = boundaryDisputeRepository;
+        this.boundaryService = boundaryService;
         this.audit = audit;
     }
 
@@ -135,5 +142,25 @@ public class StaffController {
     @GetMapping("/events/{eventId}/samples")
     public List<FoodSample> samples(@PathVariable Long eventId) {
         return sampleRepository.findByEventId(eventId);
+    }
+
+    // ================= 摊位边界争议（现场拍照 + 标注实际边界） =================
+
+    /** 某集市的边界争议列表（工作人员可查看处理进度） */
+    @GetMapping("/events/{eventId}/boundary-disputes")
+    public List<BoundaryDispute> boundaryDisputes(@PathVariable Long eventId) {
+        return boundaryDisputeRepository.findByEventIdOrderByCreatedAtDesc(eventId);
+    }
+
+    /** 登记边界争议：两个相邻摊主、现场照片、标注的实际边界 */
+    public record BoundaryReq(@NotNull Long eventId, @NotNull Long resultAId, Long resultBId, Long stallId,
+                              @NotBlank String description, String scenePhotos,
+                              String actualBoundaryNote, String actualBoundaryData) {}
+
+    @PostMapping("/boundary-disputes")
+    @Transactional
+    public BoundaryDispute registerBoundary(@RequestBody BoundaryReq req) {
+        return boundaryService.register(req.eventId(), req.resultAId(), req.resultBId(), req.stallId(),
+                req.description(), req.scenePhotos(), req.actualBoundaryNote(), req.actualBoundaryData(), me());
     }
 }

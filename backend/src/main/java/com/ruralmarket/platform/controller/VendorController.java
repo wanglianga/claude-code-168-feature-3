@@ -26,12 +26,18 @@ public class VendorController {
     private final CreditLogRepository creditLogRepository;
     private final AdjustmentRepository adjustmentRepository;
     private final ComplaintRepository complaintRepository;
+    private final BoundaryDisputeRepository boundaryDisputeRepository;
+    private final RectificationRepository rectificationRepository;
+    private final StallMapVersionRepository stallMapVersionRepository;
     private final UserRepository userRepository;
 
     public VendorController(ApplicationRepository applicationRepository, MarketEventRepository eventRepository,
                             LotteryResultRepository resultRepository, PaymentRepository paymentRepository,
                             FoodSampleRepository sampleRepository, CreditLogRepository creditLogRepository,
                             AdjustmentRepository adjustmentRepository, ComplaintRepository complaintRepository,
+                            BoundaryDisputeRepository boundaryDisputeRepository,
+                            RectificationRepository rectificationRepository,
+                            StallMapVersionRepository stallMapVersionRepository,
                             UserRepository userRepository) {
         this.applicationRepository = applicationRepository;
         this.eventRepository = eventRepository;
@@ -41,6 +47,9 @@ public class VendorController {
         this.creditLogRepository = creditLogRepository;
         this.adjustmentRepository = adjustmentRepository;
         this.complaintRepository = complaintRepository;
+        this.boundaryDisputeRepository = boundaryDisputeRepository;
+        this.rectificationRepository = rectificationRepository;
+        this.stallMapVersionRepository = stallMapVersionRepository;
         this.userRepository = userRepository;
     }
 
@@ -189,5 +198,26 @@ public class VendorController {
         c.setType(req.type());
         c.setDescription(req.description());
         return complaintRepository.save(c);
+    }
+
+    // ===== 边界争议与整改（涉及本人） =====
+    @GetMapping("/boundary-disputes")
+    public List<BoundaryDispute> myBoundaryDisputes() {
+        Long vid = me().getId();
+        return boundaryDisputeRepository.findAllByOrderByCreatedAtDesc().stream()
+                .filter(d -> involves(d, vid))
+                .toList();
+    }
+
+    @GetMapping("/rectifications")
+    public List<Rectification> myRectifications() {
+        return rectificationRepository.findByVendorIdOrderByCreatedAtDesc(me().getId());
+    }
+
+    private boolean involves(BoundaryDispute d, Long vendorId) {
+        if (d.getResultA() != null && d.getResultA().getApplication() != null
+                && vendorId.equals(d.getResultA().getApplication().getVendor().getId())) return true;
+        return d.getResultB() != null && d.getResultB().getApplication() != null
+                && vendorId.equals(d.getResultB().getApplication().getVendor().getId());
     }
 }
