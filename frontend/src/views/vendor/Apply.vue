@@ -1,5 +1,34 @@
 <template>
   <div class="page">
+    <el-card class="mb">
+      <div style="display:flex;justify-content:space-between;align-items:center" class="mb">
+        <div class="card-title" style="margin:0">摊位图与调整依据公示（新老摊主均可查看）</div>
+        <el-tag v-if="mapInfo.current" type="success">当前版本 {{ mapInfo.current.versionNo }}</el-tag>
+      </div>
+      <el-alert v-if="mapInfo.openRiskCount > 0" type="error" :closable="false" class="mb"
+        :title="`有 ${mapInfo.openRiskCount} 处边界争议频繁区域已标记为风险点，管理员将在下一次集市前重新测量并发布更新图。`" />
+      <div v-if="mapInfo.current" style="display:flex;gap:14px;align-items:flex-start">
+        <el-image :src="mapInfo.current.imageUrl" :preview-src-list="[mapInfo.current.imageUrl]"
+          class="map-img" fit="contain" preview-teleported />
+        <div style="flex:1">
+          <div><b>本次调整依据：</b>{{ mapInfo.current.changeReason }}</div>
+          <div class="text-muted mt" style="font-size:12px">
+            发布人 {{ mapInfo.current.publisher?.name }} · {{ fmtTime(mapInfo.current.publishedAt) }}
+          </div>
+          <el-collapse v-if="mapInfo.history?.length > 1" class="mt">
+            <el-collapse-item title="查看历史版本调整依据">
+              <div v-for="v in mapInfo.history" :key="v.id" class="history-item">
+                <el-tag size="small" type="success">{{ v.versionNo }}</el-tag>
+                <span style="margin-left:6px">{{ v.changeReason }}</span>
+                <span class="text-muted" style="margin-left:6px;font-size:12px">{{ fmtTime(v.publishedAt) }}</span>
+              </div>
+            </el-collapse-item>
+          </el-collapse>
+        </div>
+      </div>
+      <el-empty v-else description="摊位图尚未发布" :image-size="50" />
+    </el-card>
+
     <el-card>
       <div class="card-title">摊位报名（赶集日前提交）</div>
       <el-alert v-if="!openEvent" type="warning" :closable="false" title="当前没有开放报名的集市" class="mb" />
@@ -92,6 +121,7 @@ const auth = useAuthStore()
 const categories = CATEGORIES
 const events = ref([])
 const applications = ref([])
+const mapInfo = ref({ current: null, history: [], openRiskCount: 0 })
 const submitting = ref(false)
 const form = ref({
   category: '', vehicleLength: null, vehicleWidth: null,
@@ -111,9 +141,12 @@ function statusType(s) {
 }
 
 async function load() {
-  const [evs, apps] = await Promise.all([api.get('/meta/events'), api.get('/vendor/applications')])
+  const [evs, apps, mi] = await Promise.all([
+    api.get('/meta/events'), api.get('/vendor/applications'), api.get('/meta/stall-map/current')
+  ])
   events.value = evs
   applications.value = apps
+  mapInfo.value = mi
 }
 
 async function submit() {
@@ -131,4 +164,6 @@ onMounted(load)
 
 <style scoped>
 .mr { margin-right: 4px; }
+.map-img { width: 260px; height: 150px; border: 1px solid #ebeef5; border-radius: 4px; background: #fafafa; flex-shrink: 0; }
+.history-item { padding: 4px 0; border-bottom: 1px dashed #ebeef5; font-size: 13px; }
 </style>

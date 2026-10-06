@@ -27,12 +27,15 @@ public class VendorController {
     private final AdjustmentRepository adjustmentRepository;
     private final ComplaintRepository complaintRepository;
     private final UserRepository userRepository;
+    private final BoundaryDisputeRepository disputeRepository;
+    private final RectificationRepository rectificationRepository;
 
     public VendorController(ApplicationRepository applicationRepository, MarketEventRepository eventRepository,
                             LotteryResultRepository resultRepository, PaymentRepository paymentRepository,
                             FoodSampleRepository sampleRepository, CreditLogRepository creditLogRepository,
                             AdjustmentRepository adjustmentRepository, ComplaintRepository complaintRepository,
-                            UserRepository userRepository) {
+                            UserRepository userRepository, BoundaryDisputeRepository disputeRepository,
+                            RectificationRepository rectificationRepository) {
         this.applicationRepository = applicationRepository;
         this.eventRepository = eventRepository;
         this.resultRepository = resultRepository;
@@ -42,6 +45,8 @@ public class VendorController {
         this.adjustmentRepository = adjustmentRepository;
         this.complaintRepository = complaintRepository;
         this.userRepository = userRepository;
+        this.disputeRepository = disputeRepository;
+        this.rectificationRepository = rectificationRepository;
     }
 
     private User me() {
@@ -189,5 +194,34 @@ public class VendorController {
         c.setType(req.type());
         c.setDescription(req.description());
         return complaintRepository.save(c);
+    }
+
+    // ===== 摊位边界争议与整改（向当事摊主公开判定依据、实测尺寸与豁免结果） =====
+    @GetMapping("/boundary-disputes")
+    public List<BoundaryDispute> myBoundaryDisputes() {
+        Long vid = me().getId();
+        return disputeRepository.findAllByOrderByCreatedAtDesc().stream()
+                .filter(d -> d.getResultA().getApplication().getVendor().getId().equals(vid)
+                        || d.getResultB().getApplication().getVendor().getId().equals(vid))
+                .toList();
+    }
+
+    @GetMapping("/boundary-disputes/{id}")
+    public Map<String, Object> myBoundaryDispute(@PathVariable Long id) {
+        BoundaryDispute d = disputeRepository.findById(id)
+                .orElseThrow(() -> new BizException("争议单不存在"));
+        Long vid = me().getId();
+        boolean involved = d.getResultA().getApplication().getVendor().getId().equals(vid)
+                || d.getResultB().getApplication().getVendor().getId().equals(vid);
+        if (!involved) throw new BizException("无权查看他人争议单");
+        Map<String, Object> m = new java.util.LinkedHashMap<>();
+        m.put("dispute", d);
+        m.put("rectifications", rectificationRepository.findByDisputeId(id));
+        return m;
+    }
+
+    @GetMapping("/rectifications")
+    public List<Rectification> myRectifications() {
+        return rectificationRepository.findByVendorIdOrderByCreatedAtDesc(me().getId());
     }
 }

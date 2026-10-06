@@ -38,6 +38,11 @@ public class AdminController {
     private final AdjustmentService adjustmentService;
     private final CreditService creditService;
     private final AuditService auditService;
+    private final DisputeService disputeService;
+    private final BoundaryDisputeRepository disputeRepository;
+    private final RectificationRepository rectificationRepository;
+    private final MapRiskPointRepository riskRepository;
+    private final StallMapVersionRepository mapVersionRepository;
 
     public AdminController(MarketEventRepository eventRepository, ApplicationRepository applicationRepository,
                            LotteryRunRepository runRepository, LotteryResultRepository resultRepository,
@@ -48,7 +53,11 @@ public class AdminController {
                            CreditLogRepository creditLogRepository, AuditLogRepository auditLogRepository,
                            UserRepository userRepository, LotteryService lotteryService,
                            AdjustmentService adjustmentService, CreditService creditService,
-                           AuditService auditService) {
+                           AuditService auditService, DisputeService disputeService,
+                           BoundaryDisputeRepository disputeRepository,
+                           RectificationRepository rectificationRepository,
+                           MapRiskPointRepository riskRepository,
+                           StallMapVersionRepository mapVersionRepository) {
         this.eventRepository = eventRepository;
         this.applicationRepository = applicationRepository;
         this.runRepository = runRepository;
@@ -68,6 +77,11 @@ public class AdminController {
         this.adjustmentService = adjustmentService;
         this.creditService = creditService;
         this.auditService = auditService;
+        this.disputeService = disputeService;
+        this.disputeRepository = disputeRepository;
+        this.rectificationRepository = rectificationRepository;
+        this.riskRepository = riskRepository;
+        this.mapVersionRepository = mapVersionRepository;
     }
 
     private User me() {
@@ -286,6 +300,77 @@ public class AdminController {
         if (o == null) throw new BizException("缺少参数 " + field);
     }
 
+    // ================= 摊位边界争议复核 =================
+    @GetMapping("/disputes")
+    public List<BoundaryDispute> disputes(@RequestParam(required = false) Long eventId) {
+        if (eventId != null) return disputeRepository.findByEventIdOrderByCreatedAtDesc(eventId);
+        return disputeRepository.findAllByOrderByCreatedAtDesc();
+    }
+
+    @GetMapping("/disputes/{id}")
+    public Map<String, Object> disputeDetail(@PathVariable Long id) {
+        BoundaryDispute d = disputeRepository.findById(id).orElseThrow(() -> new BizException("争议单不存在"));
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("dispute", d);
+        m.put("rectifications", rectificationRepository.findByDisputeId(id));
+        return m;
+    }
+
+    /** 管理员复核：办结或驳回（维持超面积判定时） */
+    public record DisputeReviewReq(@NotBlank String status, String reviewNote) {}
+
+    @PostMapping("/disputes/{id}/review")
+    @Transactional
+    public BoundaryDispute reviewDispute(@PathVariable Long id, @RequestBody DisputeReviewReq req) {
+        return disputeService.review(id, req.status(), req.reviewNote(), me());
+    }
+
+    /**
+     * 认定抽签图不清晰：上传重新测量后的更新摊位图、填写调整依据并发布新版本，
+     * 系统免除本次扣罚（撤销整改、回滚信用），新老摊主均可查看版本依据。
+     */
+    public record UnclearMapReq(String versionNo, @NotBlank String imageUrl,
+                                @NotBlank String changeReason, String changeDetails, String reviewNote) {}
+
+    @PostMapping("/disputes/{id}/unclear-map")
+    @Transactional
+    public StallMapVersion unclearMap(@PathVariable Long id, @RequestBody UnclearMapReq req) {
+        return disputeService.waiveAsUnclearMap(id, req.versionNo(), req.imageUrl(),
+                req.changeReason(), req.changeDetails(), req.reviewNote(), me());
+    }
+
+    // ================= 摊位图风险点 =================
+    @GetMapping("/map-risks")
+    public List<MapRiskPoint> mapRisks(@RequestParam(required = false) String status) {
+        if (status != null && !status.isBlank()) return riskRepository.findByStatusOrderByCreatedAtDesc(status);
+        return riskRepository.findAllByOrderByCreatedAtDesc();
+    }
+
+    public record IgnoreRiskReq(String remark) {}
+
+    @PostMapping("/map-risks/{id}/ignore")
+    @Transactional
+    public MapRiskPoint ignoreRisk(@PathVariable Long id, @RequestBody(required = false) IgnoreRiskReq req) {
+        return disputeService.ignoreRisk(id, req == null ? null : req.remark(), me());
+    }
+
+    // ================= 摊位图版本 =================
+    @GetMapping("/map-versions")
+    public List<StallMapVersion> mapVersions() {
+        return mapVersionRepository.findAllByOrderByCreatedAtDesc();
+    }
+
+    /** 重新测量后发布新版摊位图（可同时解决若干风险点） */
+    public record PublishMapReq(String versionNo, @NotBlank String imageUrl,
+                                @NotBlank String changeReason, String changeDetails, List<Long> riskIds) {}
+
+    @PostMapping("/map-versions")
+    @Transactional
+    public StallMapVersion publishMap(@RequestBody PublishMapReq req) {
+        return disputeService.publishAndResolveRisks(req.versionNo(), req.imageUrl(),
+                req.changeReason(), req.changeDetails(), req.riskIds(), me());
+    }
+
     // ================= 缴费总览 =================
     @GetMapping("/payments")
     public List<Payment> payments(@RequestParam(required = false) Long eventId) {
@@ -396,6 +481,31 @@ public class AdminController {
             complaintByType.merge(c.getType(), 1L, Long::sum);
         }
         out.put("complaintByType", complaintByType);
+
+        // 7) 摊位边界争议调解
+        List<BoundaryDispute> disputes = disputeRepository.findByEventIdOrderByCreatedAtDesc(eventId);
+        Map<String, Long> disputeByVerdict = new LinkedHashMap<>();
+        Map<String, Long> disputeByStatus = new LinkedHashMap<>();
+        Map<String, Long> disputeByZone = new LinkedHashMap<>();
+        for (BoundaryDispute d : disputes) {
+            disputeByVerdict.merge(DisputeService.verdictText(d.getVerdict()), 1L, Long::sum);
+            disputeByStatus.merge(d.getStatus(), 1L, Long::sum);
+            String zone = d.getResultA().getStall().getZone().getName();
+            disputeByZone.merge(zone, 1L, Long::sum);
+        }
+        long rectCount = disputes.stream()
+                .flatMap(d -> rectificationRepository.findByDisputeId(d.getId()).stream()).count();
+        long waivedCount = disputes.stream().filter(d -> "WAIVED".equals(d.getStatus())).count();
+        long openRiskCount = riskRepository.findByStatusOrderByCreatedAtDesc("OPEN").size();
+        Map<String, Object> boundary = new LinkedHashMap<>();
+        boundary.put("total", disputes.size());
+        boundary.put("rectifications", rectCount);
+        boundary.put("waivedByUnclearMap", waivedCount);
+        boundary.put("openRiskPoints", openRiskCount);
+        boundary.put("byVerdict", disputeByVerdict);
+        boundary.put("byStatus", disputeByStatus);
+        boundary.put("byZone", disputeByZone);
+        out.put("boundaryDisputes", boundary);
         return out;
     }
 

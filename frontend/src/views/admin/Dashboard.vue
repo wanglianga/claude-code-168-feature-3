@@ -41,6 +41,31 @@
             </el-card>
           </el-col>
         </el-row>
+        <el-row :gutter="16" class="mt">
+          <el-col :span="12"><el-card shadow="never"><div ref="disputeChart" style="height:300px" /></el-card></el-col>
+          <el-col :span="12">
+            <el-card shadow="never">
+              <div class="card-title">摊位边界争议调解</div>
+              <el-descriptions :column="1" border>
+                <el-descriptions-item label="边界争议单数">{{ data.boundaryDisputes.total }} 起</el-descriptions-item>
+                <el-descriptions-item label="超面积生成整改单">{{ data.boundaryDisputes.rectifications }} 张</el-descriptions-item>
+                <el-descriptions-item label="图不清晰豁免">
+                  <el-tag :type="data.boundaryDisputes.waivedByUnclearMap > 0 ? 'warning' : 'success'">
+                    {{ data.boundaryDisputes.waivedByUnclearMap }} 起（已发版并免除扣罚）
+                  </el-tag>
+                </el-descriptions-item>
+                <el-descriptions-item label="待重测风险点">
+                  <el-tag :type="data.boundaryDisputes.openRiskPoints > 0 ? 'danger' : 'success'">
+                    {{ data.boundaryDisputes.openRiskPoints }} 处（下次集市前需重新测量发版）
+                  </el-tag>
+                </el-descriptions-item>
+              </el-descriptions>
+              <div class="card-title mt">判定分布</div>
+              <el-tag v-for="(n, k) in data.boundaryDisputes.byVerdict" :key="k" class="mr"
+                :type="k.includes('未超') ? 'info' : 'danger'">{{ k }}：{{ n }}</el-tag>
+            </el-card>
+          </el-col>
+        </el-row>
       </template>
       <el-empty v-else description="请选择集市查看复盘数据" />
     </el-card>
@@ -58,6 +83,7 @@ const data = ref(null)
 const catChart = ref(null)
 const laneChart = ref(null)
 const payChart = ref(null)
+const disputeChart = ref(null)
 let charts = []
 
 function render() {
@@ -95,7 +121,22 @@ function render() {
       label: { formatter: '{b}: ¥{c}' }
     }]
   })
-  charts = [cat, lane, pay]
+  const dispute = echarts.init(disputeChart.value)
+  const statusName = { OPEN: '待复核', PENALIZED: '已整改扣分', WAIVED: '图不清已豁免', RESOLVED: '已办结', REJECTED: '已驳回' }
+  const byZone = data.value.boundaryDisputes.byZone || {}
+  dispute.setOption({
+    title: { text: '边界争议区域分布与状态' },
+    tooltip: { trigger: 'axis' },
+    legend: { bottom: 0, data: ['争议数'] },
+    grid: { top: 50, bottom: 50 },
+    xAxis: { type: 'category', data: Object.keys(byZone) },
+    yAxis: { type: 'value', minInterval: 1 },
+    series: [{
+      name: '争议数', type: 'bar', data: Object.values(byZone),
+      itemStyle: { color: '#f56c6c' }, label: { show: true, position: 'top' }
+    }]
+  })
+  charts = [cat, lane, pay, dispute]
 }
 
 async function load() {
@@ -116,4 +157,5 @@ onMounted(async () => {
 .stat { font-size: 28px; font-weight: 700; color: #409eff; text-align: center; }
 .stat.warn { color: #f56c6c; }
 .lbl { text-align: center; color: #909399; font-size: 13px; margin-top: 4px; }
+.mr { margin: 2px; }
 </style>

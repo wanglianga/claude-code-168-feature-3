@@ -41,7 +41,7 @@
             <el-table-column prop="reason" label="原因" min-width="200" show-overflow-tooltip />
             <el-table-column label="来源" width="90">
               <template #default="{ row }">
-                {{ { PATROL: '巡查', COMPLAINT: '投诉', ADJUSTMENT: '人工调整', SYSTEM: '系统' }[row.sourceType] }}
+                {{ { PATROL: '巡查', COMPLAINT: '投诉', ADJUSTMENT: '人工调整', SYSTEM: '系统', BOUNDARY_DISPUTE: '边界超面积', BOUNDARY_WAIVER: '图不清豁免回滚' }[row.sourceType] }}
               </template>
             </el-table-column>
             <el-table-column label="时间" width="150">
@@ -71,6 +71,73 @@
         </el-card>
       </el-col>
     </el-row>
+
+    <el-card class="mt">
+      <div class="card-title">我的摊位边界争议与整改（含抽签面积、现场实测、判定与豁免依据）</div>
+      <el-table :data="disputes" size="small" class="mb">
+        <el-table-column label="争议摊位" min-width="130">
+          <template #default="{ row }">
+            <el-tag size="small">{{ row.resultA?.stallNo }}</el-tag>
+            <span class="text-muted">×</span>
+            <el-tag size="small" type="warning">{{ row.resultB?.stallNo }}</el-tag>
+            <el-tag size="small" :type="mySide(row) === 'A' ? 'primary' : 'warning'" style="margin-left:6px">
+              我是{{ mySide(row) }}方
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="我方抽签→实测" min-width="180">
+          <template #default="{ row }">
+            <span class="text-muted">{{ fmt(mySide(row) === 'A' ? row.lotWidthA : row.lotWidthB) }}×{{ fmt(mySide(row) === 'A' ? row.lotDepthA : row.lotDepthB) }}m</span>
+            →
+            <b :style="iExceed(row) ? 'color:#f56c6c' : ''">{{ fmt(mySide(row) === 'A' ? row.actualWidthA : row.actualWidthB) }}×{{ fmt(mySide(row) === 'A' ? row.actualDepthA : row.actualDepthB) }}m</b>
+          </template>
+        </el-table-column>
+        <el-table-column label="判定" width="150">
+          <template #default="{ row }">
+            <el-tag size="small" :type="verdictType(row.verdict)">{{ verdictText(row.verdict) }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="处理状态" width="130">
+          <template #default="{ row }">
+            <el-tag size="small" :type="dStatusType(row.status)">{{ dStatusText(row.status) }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="依据图版本" width="100">
+          <template #default="{ row }">{{ row.mapVersion?.versionNo || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="复核/豁免说明" min-width="200" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.reviewNote || '—' }}</template>
+        </el-table-column>
+        <el-table-column label="时间" width="140">
+          <template #default="{ row }">{{ fmtTime(row.createdAt) }}</template>
+        </el-table-column>
+      </el-table>
+      <el-empty v-if="!disputes.length" description="暂无边界争议记录" :image-size="60" />
+
+      <div class="card-title mt">整改单（图不清晰被豁免时扣分自动回滚，见上方信用记录）</div>
+      <el-table :data="rectifications" size="small">
+        <el-table-column label="摊位" width="90">
+          <template #default="{ row }">{{ row.result?.stallNo }}</template>
+        </el-table-column>
+        <el-table-column prop="requirement" label="整改要求" min-width="260" show-overflow-tooltip />
+        <el-table-column label="扣分" width="80">
+          <template #default="{ row }">
+            <span :style="{ color: row.status === 'CANCELLED_WAIVED' ? '#67c23a' : '#f56c6c' }">
+              {{ row.status === 'CANCELLED_WAIVED' ? '已回滚' : row.creditDelta }}
+            </span>
+          </template>
+        </el-table-column>
+        <el-table-column label="状态" width="120">
+          <template #default="{ row }">
+            <el-tag size="small" :type="rectType(row.status)">{{ rectText(row.status) }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="复查说明" min-width="160" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.recheckNote || '—' }}</template>
+        </el-table-column>
+      </el-table>
+      <el-empty v-if="!rectifications.length" description="暂无整改单" :image-size="60" />
+    </el-card>
 
     <el-dialog v-model="dialogVisible" title="提交申诉（费用争议/扣罚争议/边界纠纷等）" width="520px">
       <el-form :model="appealForm" label-width="90px">
@@ -111,6 +178,8 @@ const auth = useAuthStore()
 const adjustments = ref([])
 const creditLogs = ref([])
 const complaints = ref([])
+const disputes = ref([])
+const rectifications = ref([])
 const results = ref([])
 const dialogVisible = ref(false)
 const submitting = ref(false)
@@ -151,12 +220,30 @@ function onEventChange(eventId) {
 }
 
 async function load() {
-  const [adjs, logs, comps, res] = await Promise.all([
+  const [adjs, logs, comps, res, ds, recs] = await Promise.all([
     api.get('/vendor/adjustments'), api.get('/vendor/credit-logs'),
-    api.get('/vendor/complaints'), api.get('/vendor/results')
+    api.get('/vendor/complaints'), api.get('/vendor/results'),
+    api.get('/vendor/boundary-disputes'), api.get('/vendor/rectifications')
   ])
   adjustments.value = adjs; creditLogs.value = logs; complaints.value = comps; results.value = res
+  disputes.value = ds; rectifications.value = recs
 }
+
+const myId = computed(() => auth.user?.id)
+function mySide(row) {
+  return row.resultA?.application?.vendor?.id === myId.value ? 'A' : 'B'
+}
+function iExceed(row) {
+  return (mySide(row) === 'A' && ['A', 'BOTH'].includes(row.verdict))
+    || (mySide(row) === 'B' && ['B', 'BOTH'].includes(row.verdict))
+}
+function fmt(v) { return v == null ? '-' : Math.round(v * 100) / 100 }
+function verdictText(v) { return { A: '主张方超面积', B: '被诉方超面积', BOTH: '双方均超', NONE: '均未超(疑图不清)' }[v] || v }
+function verdictType(v) { return { A: 'danger', B: 'warning', BOTH: 'danger', NONE: 'info' }[v] || 'info' }
+function dStatusText(s) { return { OPEN: '待复核', PENALIZED: '已整改扣分', WAIVED: '图不清已豁免', RESOLVED: '已办结', REJECTED: '已驳回' }[s] || s }
+function dStatusType(s) { return { OPEN: 'warning', PENALIZED: 'danger', WAIVED: 'success', RESOLVED: 'success', REJECTED: 'info' }[s] || 'info' }
+function rectText(s) { return { PENDING: '待整改', RECTIFIED: '待复查', PASSED: '复查通过', FAILED: '复查不通过', CANCELLED_WAIVED: '已豁免撤销' }[s] || s }
+function rectType(s) { return { PENDING: 'danger', RECTIFIED: 'warning', PASSED: 'success', FAILED: 'danger', CANCELLED_WAIVED: 'info' }[s] || 'info' }
 
 async function submitAppeal() {
   if (!appealForm.value.eventId || !appealForm.value.description) return ElMessage.warning('请完整填写')

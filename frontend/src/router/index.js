@@ -17,11 +17,14 @@ const routes = [
       // 工作人员
       { path: 'entry', component: () => import('../views/staff/Entry.vue'), meta: { role: 'STAFF' } },
       { path: 'patrol', component: () => import('../views/staff/Patrol.vue'), meta: { role: 'STAFF' } },
+      { path: 'disputes', component: () => import('../views/staff/Disputes.vue'), meta: { role: 'STAFF' } },
       // 管理员
       { path: 'admin/events', component: () => import('../views/admin/Events.vue'), meta: { role: 'ADMIN' } },
       { path: 'admin/stalls', component: () => import('../views/admin/Stalls.vue'), meta: { role: 'ADMIN' } },
       { path: 'admin/lottery', component: () => import('../views/admin/Lottery.vue'), meta: { role: 'ADMIN' } },
       { path: 'admin/complaints', component: () => import('../views/admin/Complaints.vue'), meta: { role: 'ADMIN' } },
+      { path: 'admin/disputes', component: () => import('../views/admin/Disputes.vue'), meta: { role: 'ADMIN' } },
+      { path: 'admin/map-risk', component: () => import('../views/admin/MapRisk.vue'), meta: { role: 'ADMIN' } },
       { path: 'admin/adjustments', component: () => import('../views/admin/Adjustments.vue'), meta: { role: 'ADMIN' } },
       { path: 'admin/dashboard', component: () => import('../views/admin/Dashboard.vue'), meta: { role: 'ADMIN' } },
       { path: 'admin/audits', component: () => import('../views/admin/Audits.vue'), meta: { role: 'ADMIN' } }

@@ -5,6 +5,7 @@ import com.ruralmarket.platform.config.BizException;
 import com.ruralmarket.platform.entity.*;
 import com.ruralmarket.platform.repository.*;
 import com.ruralmarket.platform.service.AuditService;
+import com.ruralmarket.platform.service.DisputeService;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import org.springframework.transaction.annotation.Transactional;
@@ -14,7 +15,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** 市场工作人员端：扫码入场核验、巡查记录、留样查看 */
+/** 市场工作人员端：扫码入场核验、巡查记录、留样查看、边界争议现场调解 */
 @RestController
 @RequestMapping("/api/staff")
 public class StaffController {
@@ -26,11 +27,16 @@ public class StaffController {
     private final UserRepository userRepository;
     private final PaymentRepository paymentRepository;
     private final AuditService audit;
+    private final DisputeService disputeService;
+    private final BoundaryDisputeRepository disputeRepository;
+    private final RectificationRepository rectificationRepository;
 
     public StaffController(LotteryResultRepository resultRepository, EntryCheckRepository entryCheckRepository,
                            PatrolRecordRepository patrolRepository, FoodSampleRepository sampleRepository,
                            MarketEventRepository eventRepository, UserRepository userRepository,
-                           PaymentRepository paymentRepository, AuditService audit) {
+                           PaymentRepository paymentRepository, AuditService audit,
+                           DisputeService disputeService, BoundaryDisputeRepository disputeRepository,
+                           RectificationRepository rectificationRepository) {
         this.resultRepository = resultRepository;
         this.entryCheckRepository = entryCheckRepository;
         this.patrolRepository = patrolRepository;
@@ -39,6 +45,9 @@ public class StaffController {
         this.userRepository = userRepository;
         this.paymentRepository = paymentRepository;
         this.audit = audit;
+        this.disputeService = disputeService;
+        this.disputeRepository = disputeRepository;
+        this.rectificationRepository = rectificationRepository;
     }
 
     private User me() {
@@ -135,5 +144,67 @@ public class StaffController {
     @GetMapping("/events/{eventId}/samples")
     public List<FoodSample> samples(@PathVariable Long eventId) {
         return sampleRepository.findByEventId(eventId);
+    }
+
+    // ================= 摊位边界争议现场调解 =================
+
+    /** 某集市的边界争议列表 */
+    @GetMapping("/events/{eventId}/disputes")
+    public List<BoundaryDispute> eventDisputes(@PathVariable Long eventId) {
+        return disputeRepository.findByEventIdOrderByCreatedAtDesc(eventId);
+    }
+
+    /** 全部边界争议（工作人员侧，便于跨集市跟踪整改） */
+    @GetMapping("/disputes")
+    public List<BoundaryDispute> allDisputes() {
+        return disputeRepository.findAllByOrderByCreatedAtDesc();
+    }
+
+    /** 争议详情（含整改单） */
+    @GetMapping("/disputes/{id}")
+    public Map<String, Object> disputeDetail(@PathVariable Long id) {
+        BoundaryDispute d = disputeRepository.findById(id)
+                .orElseThrow(() -> new BizException("争议单不存在"));
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("dispute", d);
+        m.put("rectifications", rectificationRepository.findByDisputeId(id));
+        return m;
+    }
+
+    /**
+     * 现场立案：选择争议双方、上传现场照片、在平台标注实际边界并实测双方尺寸。
+     * 系统按抽签面积自动判定，超面积方生成整改单并扣分；疑似图不清晰转管理员复核。
+     */
+    public record DisputeReq(@NotNull Long eventId, @NotNull Long resultAId, @NotNull Long resultBId,
+                             String photos, String boundaryMark, String markBaseImage,
+                             Double actualWidthA, Double actualDepthA,
+                             Double actualWidthB, Double actualDepthB,
+                             Double laneClearWidth, String description) {}
+
+    @PostMapping("/disputes")
+    @Transactional
+    public BoundaryDispute fileDispute(@RequestBody DisputeReq req) {
+        return disputeService.fileDispute(req.eventId(), req.resultAId(), req.resultBId(), me(),
+                req.photos(), req.boundaryMark(), req.markBaseImage(),
+                req.actualWidthA(), req.actualDepthA(), req.actualWidthB(), req.actualDepthB(),
+                req.laneClearWidth(), req.description());
+    }
+
+    /** 待复查/全部整改单 */
+    @GetMapping("/rectifications")
+    public List<Rectification> rectifications(@RequestParam(required = false) String status) {
+        if (status != null && !status.isBlank()) return rectificationRepository.findByStatusOrderByCreatedAtDesc(status);
+        return rectificationRepository.findAllByOrderByCreatedAtDesc();
+    }
+
+    /** 现场复查整改：通过则关闭整改单（全部通过后争议自动办结），不通过保持整改 */
+    public record RecheckReq(@NotNull Boolean passed, String photos, String note,
+                             Double recheckedWidth, Double recheckedDepth) {}
+
+    @PostMapping("/rectifications/{id}/recheck")
+    @Transactional
+    public Rectification recheck(@PathVariable Long id, @RequestBody RecheckReq req) {
+        return disputeService.recheck(id, Boolean.TRUE.equals(req.passed()), req.photos(), req.note(),
+                req.recheckedWidth(), req.recheckedDepth(), me());
     }
 }

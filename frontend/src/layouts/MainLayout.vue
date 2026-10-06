@@ -16,12 +16,15 @@
         <template v-if="role === 'STAFF'">
           <el-menu-item index="/entry"><el-icon><Iphone /></el-icon><span>入场核验</span></el-menu-item>
           <el-menu-item index="/patrol"><el-icon><View /></el-icon><span>巡查登记</span></el-menu-item>
+          <el-menu-item index="/disputes"><el-icon><Aim /></el-icon><span>边界争议调解</span></el-menu-item>
         </template>
         <template v-if="role === 'ADMIN'">
           <el-menu-item index="/admin/events"><el-icon><Calendar /></el-icon><span>集市与报名审核</span></el-menu-item>
           <el-menu-item index="/admin/stalls"><el-icon><Grid /></el-icon><span>区域摊位管理</span></el-menu-item>
           <el-menu-item index="/admin/lottery"><el-icon><MagicStick /></el-icon><span>抽签管理</span></el-menu-item>
           <el-menu-item index="/admin/complaints"><el-icon><ChatDotSquare /></el-icon><span>投诉处理</span></el-menu-item>
+          <el-menu-item index="/admin/disputes"><el-icon><Aim /></el-icon><span>边界争议复核</span></el-menu-item>
+          <el-menu-item index="/admin/map-risk"><el-icon><MapLocation /></el-icon><span>摊位图与风险点</span></el-menu-item>
           <el-menu-item index="/admin/adjustments"><el-icon><SetUp /></el-icon><span>调整与追溯</span></el-menu-item>
           <el-menu-item index="/admin/dashboard"><el-icon><DataAnalysis /></el-icon><span>复盘看板</span></el-menu-item>
           <el-menu-item index="/admin/audits"><el-icon><Memo /></el-icon><span>审计日志</span></el-menu-item>
@@ -55,7 +58,7 @@
 import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../store/auth'
-import { Shop, HomeFilled, EditPen, Ticket, Food, Document, Iphone, View, Calendar, Grid, MagicStick, ChatDotSquare, SetUp, DataAnalysis, Memo, Fold, Expand, ArrowDown } from '@element-plus/icons-vue'
+import { Shop, HomeFilled, EditPen, Ticket, Food, Document, Iphone, View, Aim, Calendar, Grid, MagicStick, ChatDotSquare, SetUp, DataAnalysis, Memo, MapLocation, Fold, Expand, ArrowDown } from '@element-plus/icons-vue'
 
 const auth = useAuthStore()
 const router = useRouter()

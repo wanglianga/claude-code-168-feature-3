@@ -30,6 +30,12 @@ public class Stall {
     @Column(nullable = false)
     private Boolean nearFireLane = false;
 
+    /** 抽签面积-面宽（米）：抽签图上该摊位登记的面宽，作为边界争议判定基准 */
+    private Double lotWidth;
+
+    /** 抽签面积-进深（米） */
+    private Double lotDepth;
+
     /** 是否启用（消防通道本身等不用于分配的位置设为 false） */
     @Column(nullable = false)
     private Boolean active = true;
